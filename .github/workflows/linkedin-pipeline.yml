@@ -4,7 +4,7 @@ name: AI Radar to LinkedIn Pipeline
 on:
   schedule:
     - cron: '30 4 * * *'   # 04:30 UTC = 10:00 AM IST, daily
-  workflow_dispatch:         # allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   run-pipeline:
@@ -28,7 +28,13 @@ jobs:
               ],
               "title": "AI Radar Pipeline — Daily Run"
             }')
-          echo "SESSION_ID=$(echo $RESPONSE | jq -r '.id')" >> $GITHUB_OUTPUT
+          SESSION_ID=$(echo $RESPONSE | jq -r '.id')
+          if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
+            echo "ERROR: Failed to create session. Response: $RESPONSE"
+            exit 1
+          fi
+          echo "SESSION_ID=$SESSION_ID" >> $GITHUB_OUTPUT
+          echo "Session created: $SESSION_ID"
 
       - name: Send trigger message
         run: |
@@ -43,23 +49,5 @@ jobs:
                 "content": [{ "type": "text", "text": "Process today'\''s AI Productivity Radar digest." }]
               }]
             }'
-
-      - name: Wait for completion
-        run: |
-          SESSION_ID=${{ steps.create_session.outputs.SESSION_ID }}
-          echo "Session $SESSION_ID is running. Agent will post confirmation to #ai-productivity-radar when done."
-          
-          # Poll until session goes idle (agent finished)
-          for i in $(seq 1 60); do
-            STATUS=$(curl -s https://api.anthropic.com/v1/sessions/$SESSION_ID \
-              -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
-              -H "anthropic-version: 2023-06-01" \
-              -H "anthropic-beta: managed-agents-2026-04-01" \
-              | jq -r '.status')
-            echo "[$i/60] Status: $STATUS"
-            if [ "$STATUS" = "idle" ]; then
-              echo "Pipeline complete."
-              break
-            fi
-            sleep 30
-          done
+          echo "Pipeline triggered. Agent will post confirmation to #ai-productivity-radar when complete (~15-20 min)."
+          # No polling — agent self-reports via Slack when done.
